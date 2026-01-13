@@ -1,0 +1,40 @@
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from database import Base
+from datetime import datetime
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password = Column(String, nullable=False)
+
+    bookings = relationship("Booking", back_populates="host")
+
+
+class Room(Base):
+    __tablename__ = "rooms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    capacity = Column(Integer, nullable=False)
+
+    bookings = relationship("Booking", back_populates="room")
+
+
+class Booking(Base):
+    __tablename__ = "bookings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"))
+    host_id = Column(Integer, ForeignKey("users.id"))
+
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    status = Column(String, default="booked")  # booked | in_use | cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    room = relationship("Room", back_populates="bookings")
+    host = relationship("User", back_populates="bookings")
