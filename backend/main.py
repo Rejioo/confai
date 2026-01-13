@@ -14,12 +14,32 @@ from models import Room
 from bookings import is_room_available
 from datetime import datetime
 from auth import decode_token
-from fastapi.security import OAuth2PasswordBearer
+# from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models import Booking
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+#     payload = decode_token(token)
+#     if not payload:
+#         raise HTTPException(status_code=401, detail="Invalid token")
+
+#     user = db.query(User).filter(User.id == payload["user_id"]).first()
+#     if not user:
+#         raise HTTPException(status_code=401, detail="User not found")
+
+#     return user
+security = HTTPBearer()
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    token = credentials.credentials
     payload = decode_token(token)
+
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
