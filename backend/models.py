@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
+from time_utils import now_ist_naive
 
 class User(Base):
     __tablename__ = "users"
@@ -34,7 +35,7 @@ class Booking(Base):
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=False)
     status = Column(String, default="booked")  # booked | in_use | cancelled
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_ist_naive())
 
     room = relationship("Room", back_populates="bookings")
     host = relationship("User", back_populates="bookings")

@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta,UTC
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from datetime import datetime, timedelta, timezone
+
 
 SECRET_KEY = "confai-secret-key"  # demo key, don’t be heroic
 ALGORITHM = "HS256"
@@ -16,7 +18,7 @@ def verify_password(plain_password, hashed_password):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 

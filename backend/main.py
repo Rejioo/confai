@@ -17,7 +17,9 @@ from auth import decode_token
 # from fastapi.security import OAuth2PasswordBearer
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models import Booking
-
+from auto_cancel import auto_cancel_expired_bookings
+from time_utils import now_ist_naive
+from sqlalchemy import distinct
 
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -115,6 +117,10 @@ def book_room(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    # Normalize to IST-naive (ASSUME input is IST)
+    start_time = start_time.replace(tzinfo=None)
+    end_time = end_time.replace(tzinfo=None)
+    
     if not is_room_available(db, room_id, start_time, end_time):
         raise HTTPException(status_code=400, detail="Room not available")
 
@@ -130,3 +136,51 @@ def book_room(
     db.refresh(booking)
 
     return {"message": "Room booked successfully", "booking_id": booking.id}
+
+@app.get("/dashboard/stats")
+def dashboard_stats(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    now = now_ist_naive()
+
+    total_rooms = db.query(Room).count()
+
+    rooms_in_use = db.query(distinct(Booking.room_id)).filter(
+        Booking.status == "in_use",
+        Booking.start_time <= now,
+        Booking.end_time >= now
+    ).count()
+
+    rooms_booked_now = db.query(distinct(Booking.room_id)).filter(
+        Booking.status == "booked",
+        Booking.start_time <= now,
+        Booking.end_time >= now
+    ).count()
+
+    available_rooms = total_rooms - rooms_in_use - rooms_booked_now
+    upcoming_bookings = db.query(Booking).filter(
+    Booking.status == "booked",
+    Booking.start_time > now
+    ).count()
+
+    return {
+        "total_rooms": total_rooms,
+        "available_rooms": max(available_rooms, 0),
+        "rooms_in_use": rooms_in_use,
+        "rooms_booked": rooms_booked_now,
+        "upcoming bookings":upcoming_bookings
+    }
+    
+@app.get("/my-schedules")
+def my_schedules(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    auto_cancel_expired_bookings(db)
+
+    bookings = db.query(Booking).filter(
+        Booking.host_id == user.id
+    ).order_by(Booking.start_time).all()
+
+    return bookings
