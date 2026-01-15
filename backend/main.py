@@ -30,7 +30,10 @@ from typing import Dict
 from datetime import datetime
 import re
 from intent_utils import infer_intent_from_text
-
+from booking_service import create_booking
+from room_resolver import resolve_room_id
+from bookings import is_room_available
+from datetime import datetime
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -290,7 +293,7 @@ def chat(
 ):
     user_id = user.id
     msg = message.lower()
-
+    
     # -------------------------------
     # 1. INTENT RESOLUTION
     # -------------------------------
@@ -344,7 +347,7 @@ def chat(
 
     date, parsed_start, parsed_end = extract_date_time(msg)
     extracted["date"] = date
-
+    
     # time handling (context-aware)
     if parsed_start and not booking["start_time"]:
         extracted["start_time"] = parsed_start
@@ -390,7 +393,163 @@ def chat(
     confirmed_booking = booking.copy()
     del pending_bookings[user_id]
 
+    # -------------------------------
+    # CREATE BOOKING AFTER CONFIRM
+    # -------------------------------
+
+    booking_data = confirmed_booking
+
+    # map intent -> meeting_type
+    meeting_type = (
+        "offline"
+        if booking_data["intent"] == "book_offline_meeting"
+        else "online"
+    )
+    
+    room_id=None
+    # -------------------------------
+    # FINAL VALIDATION BEFORE BOOKING
+    # -------------------------------
+
+    required = ["date", "start_time", "end_time"]
+    missing = [k for k in required if not booking_data.get(k)]
+
+    if missing:
+        return {
+            "type": "ask",
+            "message": f"I need the following details: {', '.join(missing)}"
+        }
+
+    if meeting_type == "offline" and not booking_data.get("room_name"):
+        return {
+            "type": "ask",
+            "message": "Which room should I book?"
+        }
+
+    if not booking_data.get("participants"):
+        return {
+            "type": "ask",
+            "message": "Who are the participants?"
+        }
+    
+    # start_dt = datetime.fromisoformat(
+    #     f"{booking_data['date']}T{booking_data['start_time']}"
+    # )
+    # end_dt = datetime.fromisoformat(
+    #     f"{booking_data['date']}T{booking_data['end_time']}"
+    # )
+
+    # # check overlap only for offline meetings
+    # if meeting_type == "offline":
+    #     if not is_room_available(db, room_id, start_dt, end_dt):
+    #         return {
+    #             "type": "error",
+    #             "message": "Room is already booked for this time slot."
+    #         }
+    
+  
+    # # resolve room for offline
+    # 
+    # if meeting_type == "offline":
+    #     room_id = resolve_room_id(db, booking_data["room_name"])
+    #     if not room_id:
+    #         return {
+    #             "type": "error",
+    #             "message": f"Room '{booking_data['room_name']}' not found."
+    #         }
+    room_id = None
+    
+    
+    # resolve room_id + overlap check ONLY for offline meetings
+    if meeting_type == "offline":
+        room_id = resolve_room_id(db, booking_data["room_name"])
+        if not room_id:
+            return {
+                "type": "error",
+                "message": f"Room '{booking_data['room_name']}' not found."
+            }
+
+        start_dt = datetime.fromisoformat(
+            f"{booking_data['date']}T{booking_data['start_time']}"
+        )
+        end_dt = datetime.fromisoformat(
+            f"{booking_data['date']}T{booking_data['end_time']}"
+        )
+
+        if not is_room_available(db, room_id, start_dt, end_dt):
+            return {
+                "type": "error",
+                "message": "Room is already booked for this time slot."
+            }
+
+    
+    
+    
+    
+    # create booking
+    try:
+        new_booking = create_booking(
+            db=db,
+            host_id=user.id,
+            room_id=room_id,
+            date=booking_data["date"],
+            start_time=booking_data["start_time"],
+            end_time=booking_data["end_time"],
+            meeting_type=meeting_type,
+            participants=booking_data["participants"],
+        )
+    except Exception as e:
+        db.rollback()
+        return {
+            "type": "error",
+            "message": f"Booking failed: {str(e)}"
+        }
+    
+        # -------- EMAIL NOTIFICATION --------
+    from email_service import send_email
+
+    participant_names = booking_data["participants"]
+
+    users = (
+        db.query(User)
+        .filter(User.name.in_(participant_names))
+        .all()
+    )
+
+    emails = [u.email for u in users]
+
+    if emails:
+        subject = "Meeting Scheduled"
+
+        body = f"""
+    Meeting Details:
+
+    Type: {meeting_type}
+    Room: {booking_data.get("room_name", "Online")}
+    Date: {booking_data['date']}
+    Time: {booking_data['start_time']} to {booking_data['end_time']}
+    Host: {user.name}
+    """
+
+        try:
+            send_email(
+                to_emails=emails,
+                subject=subject,
+                body=body
+            )
+        except Exception as e:
+            print("EMAIL FAILED:", e)
+    # -------- END EMAIL --------
+
+    # IMPORTANT: clear state
+    pending_bookings.pop(user.id, None)
+
     return {
-        "type": "confirm",
-        "booking": confirmed_booking
+        "type": "success",
+        "message": "Meeting booked successfully.",
+        "booking_id": new_booking.id
     }
+        
+    
+    
+    

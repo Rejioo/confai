@@ -3,6 +3,9 @@ from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
 from time_utils import now_ist_naive
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from time_utils import now_ist_naive
 
 class User(Base):
     __tablename__ = "users"
@@ -29,12 +32,17 @@ class Booking(Base):
     __tablename__ = "bookings"
 
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"))
-    host_id = Column(Integer, ForeignKey("users.id"))
+
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)  
+    host_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=False)
-    status = Column(String, default="booked")  # booked | in_use | cancelled
+
+    meeting_type = Column(String, nullable=False)   # "online" | "offline"
+    participants = Column(Text, nullable=True)      # "adam,julie"
+
+    status = Column(String, default="booked")       # booked | in_use | cancelled
     created_at = Column(DateTime, default=now_ist_naive)
 
     room = relationship("Room", back_populates="bookings")
