@@ -242,13 +242,25 @@ def my_schedules(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    auto_cancel_expired_bookings(db)
+    name = user.name.lower()
 
     bookings = db.query(Booking).filter(
-        Booking.host_id == user.id
-    ).order_by(Booking.start_time).all()
+        (Booking.host_id == user.id) |
+        (Booking.participants.ilike(f"%{name}%"))
+    ).all()
 
-    return bookings
+    return [
+        {
+            "booking_id": b.id,
+            "room_id": b.room_id,
+            "meeting_type": b.meeting_type,
+            "start_time": b.start_time,
+            "end_time": b.end_time,
+            "status": b.status,
+            "host_id": b.host_id
+        }
+        for b in bookings
+    ]
 
 
 @app.post("/check-in")
@@ -274,6 +286,22 @@ def check_in(
             status_code=400,
             detail="Check-in allowed only during meeting time"
         )
+        # --- CHECK PERMISSION: host or participant ---
+    participant_names = [
+        p.strip().lower()
+        for p in booking.participants.split(",")
+    ]
+
+    is_host = booking.host_id == user.id
+    is_participant = user.name.lower() in participant_names
+
+    if not (is_host or is_participant):
+        raise HTTPException(
+            status_code=403,
+            detail="You are not part of this meeting"
+        )
+    # --- END PERMISSION CHECK ---
+
 
     booking.status = "in_use"
     db.commit()
@@ -341,7 +369,8 @@ def chat(
     extracted = {
         "room_name": extract_room_name(msg),
         # "participants": extract_participants_from_text(msg)
-        "participants": extract_participants_from_text(msg)
+        "participants": extract_participants_from_text(msg, db)
+
 
     }
 
@@ -431,34 +460,8 @@ def chat(
             "type": "ask",
             "message": "Who are the participants?"
         }
-    
-    # start_dt = datetime.fromisoformat(
-    #     f"{booking_data['date']}T{booking_data['start_time']}"
-    # )
-    # end_dt = datetime.fromisoformat(
-    #     f"{booking_data['date']}T{booking_data['end_time']}"
-    # )
-
-    # # check overlap only for offline meetings
-    # if meeting_type == "offline":
-    #     if not is_room_available(db, room_id, start_dt, end_dt):
-    #         return {
-    #             "type": "error",
-    #             "message": "Room is already booked for this time slot."
-    #         }
-    
-  
-    # # resolve room for offline
-    # 
-    # if meeting_type == "offline":
-    #     room_id = resolve_room_id(db, booking_data["room_name"])
-    #     if not room_id:
-    #         return {
-    #             "type": "error",
-    #             "message": f"Room '{booking_data['room_name']}' not found."
-    #         }
-    room_id = None
-    
+   
+    # room_id = None
     
     # resolve room_id + overlap check ONLY for offline meetings
     if meeting_type == "offline":

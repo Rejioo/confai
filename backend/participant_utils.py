@@ -1,11 +1,15 @@
-KNOWN_USERS = {"rajit", "adam", "julie"}
+from sqlalchemy.orm import Session
+from models import User
 
-def extract_participants_from_text(message: str):
+def extract_participants_from_text(message: str, db: Session):
     msg = message.lower()
     found = []
 
-    for name in KNOWN_USERS:
+    users = db.query(User).all()
+
+    for user in users:
+        name = user.name.lower()
         if name in msg:
-            found.append(name)
+            found.append(user.name)
 
     return found
