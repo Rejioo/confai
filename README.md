@@ -81,6 +81,10 @@ cd backend
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+
+download ollama from https://ollama.com/download 
+ollama pull phi3:mini
+
 uvicorn main:app --reload
 ```
 
